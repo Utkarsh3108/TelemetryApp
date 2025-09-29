@@ -18,7 +18,7 @@ class TelemetryViewModel(application: Application) : AndroidViewModel(applicatio
     private val _isRunning = MutableStateFlow(false)
     val isRunning: StateFlow<Boolean> = _isRunning
 
-    private val _computeLoad = MutableStateFlow(2)
+    private val _computeLoad = MutableStateFlow(1)
     val computeLoad: StateFlow<Int> = _computeLoad
 
     private val _summary = MutableStateFlow(TelemetrySummary())
@@ -33,8 +33,13 @@ class TelemetryViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
 
-    fun setComputeLoad(value: Int) {
-        _computeLoad.value = value
+    fun setComputeLoad(value: Int, isPowerSave: Boolean = false) {
+        if(isPowerSave){
+            _computeLoad.value=1
+        }
+        else {
+            _computeLoad.value = value
+        }
         // inform service
         val ctx = getApplication<Application>()
         val intent = Intent(ctx, TelemetryForegroundService::class.java).apply {

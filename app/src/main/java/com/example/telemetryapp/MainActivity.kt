@@ -17,7 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import com.example.telemetryapp.service.TelemetryForegroundService
 import com.example.telemetryapp.ui.screens.MainScreen
-import com.example.telemetryapp.ui.screens.TelemetryScreen
 import com.example.telemetryapp.ui.theme.TelemetryAppTheme
 import com.example.telemetryapp.util.JankTracker
 import com.example.telemetryapp.viewmodel.TelemetryViewModel

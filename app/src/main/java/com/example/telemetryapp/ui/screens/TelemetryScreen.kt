@@ -25,93 +25,6 @@ import kotlin.math.max
 import kotlin.math.roundToInt
 
 @Composable
-fun TelemetryScreen(viewModel: TelemetryViewModel, jankTracker: JankTracker) {
-    val isRunning by viewModel.isRunning.collectAsState()
-    val computeLoad by viewModel.computeLoad.collectAsState()
-    val summary by viewModel.summary.collectAsState()
-
-    var jankStats by remember { mutableStateOf(Triple(0.0, 0.0, 0)) }
-
-    val (avgMs, stdMs, jankCount) = jankStats
-
-    var movingTriple by remember { mutableStateOf(Triple(0.0, 0.0, 0)) }
-
-    // Poll jankTracker every 500ms for UI updates (coarse)
-    LaunchedEffect(Unit) {
-        while (true) {
-            movingTriple = jankTracker.snapshotLast30s()
-            delay(500)
-        }
-    }
-
-    val pm = LocalContext.current.getSystemService(PowerManager::class.java)
-    val powerSaveOn = pm?.isPowerSaveMode == true
-
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Telemetry Lab", style = MaterialTheme.typography.bodyLarge)
-            Spacer(Modifier.weight(1f))
-            Switch(checked = isRunning, onCheckedChange = {
-                if (it) viewModel.startTelemetry() else viewModel.stopTelemetry()
-            })
-        }
-
-        Spacer(Modifier.height(12.dp))
-        Text("Compute Load: $computeLoad")
-        Slider(
-            value = computeLoad.toFloat(),
-            onValueChange = { viewModel.setComputeLoad(it.roundToInt()) },
-            valueRange = 1f..5f,
-            steps = 3
-        )
-
-        Spacer(Modifier.height(12.dp))
-        if (powerSaveOn) {
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .background(MaterialTheme.colorScheme.secondary)
-                    .padding(8.dp)
-            ) {
-                Text("Power-save mode: reduced sampling & compute", style = MaterialTheme.typography.bodySmall)
-            }
-            Spacer(Modifier.height(12.dp))
-        }
-
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp)) {
-                Text("Last frame (ms): ${"%.2f".format(summary.lastFrameMs)}")
-                Text("Moving avg (ms): ${"%.2f".format(movingTriple.first)}")
-                Text("Moving std (ms): ${"%.2f".format(movingTriple.second)}")
-                val jankPct = run {
-                    // estimate total frames in 30s by measuring 30s/period (approx)
-                    val periodMs = if (powerSaveOn) 100 else 50
-                    val totalFrames = max(1, (30_000 / periodMs))
-                    movingTriple.third.toDouble() * 100.0 / totalFrames
-                }
-                Text("Jank % (last 30s): ${"%.2f".format(jankPct)}")
-                Text("Jank frames: ${movingTriple.third}")
-            }
-        }
-
-        Spacer(Modifier.height(12.dp))
-
-        // Busy list to show UI activity — simple repeated items
-        val items = remember { (1..1000).map { "Item #$it" } }
-        LazyColumn(modifier = Modifier.weight(1f)) {
-            itemsIndexed(items) { idx, label ->
-                Row(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
-                    Text(label)
-                    Spacer(Modifier.weight(1f))
-                    Text("Cnt: ${idx % 100}")
-                }
-            }
-        }
-    }
-}
-
-
-@Composable
 fun MainScreen(viewModel: TelemetryViewModel, jankTracker: JankTracker) {
     val isRunning by viewModel.isRunning.collectAsState()
     val computeLoad by viewModel.computeLoad.collectAsState()
@@ -132,6 +45,9 @@ fun MainScreen(viewModel: TelemetryViewModel, jankTracker: JankTracker) {
     val powerSaveOn = pm?.isPowerSaveMode == true
     val totalFrames = if (powerSaveOn) (30_000 / 100.0) else (30_000 / 50.0) // 10Hz vs 20Hz
     val jankPercent = (jankCount / totalFrames * 100.0).coerceAtMost(100.0)
+    val effectiveComputeLoad = if (powerSaveOn) max(1, computeLoad - 1) else computeLoad
+    val effectiveHz = if (powerSaveOn) 10 else 20
+
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         // Top row: title + toggle
@@ -150,7 +66,7 @@ fun MainScreen(viewModel: TelemetryViewModel, jankTracker: JankTracker) {
         Text("Compute Load: $computeLoad")
         Slider(
             value = computeLoad.toFloat(),
-            onValueChange = { viewModel.setComputeLoad(it.roundToInt()) },
+            onValueChange = { viewModel.setComputeLoad(it.roundToInt(), powerSaveOn) },
             valueRange = 1f..5f,
             steps = 3
         )
@@ -184,6 +100,9 @@ fun MainScreen(viewModel: TelemetryViewModel, jankTracker: JankTracker) {
                 Text("Frame time std: ${"%.2f".format(stdFrame)} ms")
                 Text("Jank frames (30s): $jankCount")
                 Text("Jank % (30s): ${"%.1f".format(jankPercent)}%")
+
+                Text("Compute Load: $computeLoad (effective: $effectiveComputeLoad)")
+                Text("Sampling frequency: $effectiveHz Hz")
             }
         }
 

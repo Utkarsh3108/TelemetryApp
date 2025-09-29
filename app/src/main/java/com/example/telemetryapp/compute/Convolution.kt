@@ -1,61 +1,68 @@
 package com.example.telemetryapp.compute
 
 import kotlin.math.sqrt
+import kotlin.math.max
+import kotlin.math.min
 
 object Convolution {
-    const val SIZE = 256
+    private const val SIZE = 256
     private val kernel = arrayOf(
-        floatArrayOf(0.0625f, 0.125f, 0.0625f),
-        floatArrayOf(0.125f,  0.25f,  0.125f),
-        floatArrayOf(0.0625f, 0.125f, 0.0625f)
+        floatArrayOf(0.0f, 0.25f, 0.0f),
+        floatArrayOf(0.25f, 0.0f, 0.25f),
+        floatArrayOf(0.0f, 0.25f, 0.0f)
     )
 
-    // Create deterministic input
-    fun makeInput(): FloatArray {
-        val arr = FloatArray(SIZE * SIZE)
-        for (i in arr.indices) arr[i] = ((i and 0xFF).toFloat() / 255f)
-        return arr
+    // Reusable buffers to avoid allocation
+    private val bufferA = Array(SIZE) { FloatArray(SIZE) }
+    private val bufferB = Array(SIZE) { FloatArray(SIZE) }
+
+    fun makeInput(): Array<FloatArray> {
+        val input = Array(SIZE) { FloatArray(SIZE) }
+        for (i in 0 until SIZE) for (j in 0 until SIZE) input[i][j] = (i * j % 256).toFloat()
+        return input
     }
 
-    // Single-pass 3x3 convolution (returns new array)
-    fun convolveSinglePass(input: FloatArray, w: Int = SIZE, h: Int = SIZE): FloatArray {
-        val out = FloatArray(input.size)
-        for (y in 1 until h - 1) {
-            val rowOff = y * w
-            for (x in 1 until w - 1) {
-                var sum = 0f
-                sum += input[rowOff + x - w - 1] * kernel[0][0]
-                sum += input[rowOff + x - w]     * kernel[0][1]
-                sum += input[rowOff + x - w + 1] * kernel[0][2]
-                sum += input[rowOff + x - 1]     * kernel[1][0]
-                sum += input[rowOff + x]         * kernel[1][1]
-                sum += input[rowOff + x + 1]     * kernel[1][2]
-                sum += input[rowOff + x + w - 1] * kernel[2][0]
-                sum += input[rowOff + x + w]     * kernel[2][1]
-                sum += input[rowOff + x + w + 1] * kernel[2][2]
-                out[rowOff + x] = sum
+    fun repeatedConvolve(input: Array<FloatArray>, repeat: Int): Array<FloatArray> {
+        val src = bufferA
+        val dst = bufferB
+        // Copy input to bufferA
+        for (i in 0 until SIZE) System.arraycopy(input[i], 0, src[i], 0, SIZE)
+
+        var inBuf = src
+        var outBuf = dst
+        repeat(repeat) {
+            for (i in 1 until SIZE - 1) {
+                val rowPrev = inBuf[i - 1]
+                val rowCurr = inBuf[i]
+                val rowNext = inBuf[i + 1]
+                val outRow = outBuf[i]
+                for (j in 1 until SIZE - 1) {
+                    outRow[j] =
+                        rowPrev[j - 1] * kernel[0][0] + rowPrev[j] * kernel[0][1] + rowPrev[j + 1] * kernel[0][2] +
+                                rowCurr[j - 1] * kernel[1][0] + rowCurr[j] * kernel[1][1] + rowCurr[j + 1] * kernel[1][2] +
+                                rowNext[j - 1] * kernel[2][0] + rowNext[j] * kernel[2][1] + rowNext[j + 1] * kernel[2][2]
+                }
+            }
+            // Swap buffers
+            val tmp = inBuf
+            inBuf = outBuf
+            outBuf = tmp
+        }
+        return inBuf
+    }
+
+    fun summaryMeanStd(data: Array<FloatArray>): Pair<Double, Double> {
+        var sum = 0.0
+        var count = 0
+        for (row in data) {
+            for (v in row) {
+                sum += v
+                count++
             }
         }
-        return out
-    }
-
-    // Repeated passes - simple implementation (allocates). For performance, consider buffer reuse.
-    fun repeatedConvolve(inputBase: FloatArray, passes: Int): FloatArray {
-        if (passes <= 0) return inputBase
-        var cur = inputBase
-        var next: FloatArray
-        for (i in 0 until passes) {
-            next = convolveSinglePass(cur)
-            cur = next
-        }
-        return cur
-    }
-
-    // Optional small utility to compute mean/std for a float array
-    fun summaryMeanStd(arr: FloatArray): Pair<Double, Double> {
-        if (arr.isEmpty()) return 0.0 to 0.0
-        val mean = arr.map { it.toDouble() }.average()
-        val std = sqrt(arr.map { (it - mean) * (it - mean) }.average())
-        return mean to std
+        val mean = sum / count
+        var sumSq = 0.0
+        for (row in data) for (v in row) sumSq += (v - mean) * (v - mean)
+        return mean to kotlin.math.sqrt(sumSq / count)
     }
 }
